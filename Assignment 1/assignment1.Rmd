@@ -1,0 +1,264 @@
+---
+title: "marketing_homework1"
+author: "Abhinaya"
+date: "February 10, 2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Random Effects and Hierarchical Linear Models 
+
+## Business Problem
+
+Random Effects and Hierarchical Linear Models 
+
+In this exercise, we will use hierarchical linear models and regressions with random effects for an analytics problem from a credit card company. The credit card company would like to figure out whether offering more promotions (for example, gasoline rebates and coupons for using the credit card) to their existing customers can increase the share-of-wallet of the credit card (that is, the share of a consumer's monthly spending using the credit card in her total spending). The company would also like to figure out what customer characteristics make them more responsive to promotions. 
+
+### Question 1
+
+1). Please read the data into R and create a data frame named "sow.data". Please convert consumer ID's to factors and create the following 2 variables in the data frame: logIncome = log(Income) and logSowRatio = log(WalletShare/(1-WalletShare)).
+
+```{r}
+setwd("~/3_Spring Classes/Marketing Analytics/Assignment 1")
+sow.data <- read.csv("CreditCard_SOW_data.csv")
+
+sow.data$ConsumerID <- as.factor(sow.data$ConsumerID)
+sow.data$logIncome = log(sow.data$Income)
+sow.data$logSowRatio = log(sow.data$WalletShare/(1-sow.data$WalletShare))
+
+str(sow.data)
+```
+
+### Question 2
+
+2). Use the function lm( ) to run the regression
+
+Copy and paste the results here.
+
+
+```{r}
+sow.lm <- lm(logSowRatio ~ History + Balance + Promotion + History:Promotion + logIncome:Promotion, sow.data)
+
+summary(sow.lm)
+```
+
+
+### Question 3
+
+Estimate the following hierarchical linear model using the function lmer( ) in the R package "lme4"
+
+![Equation](problem 3a.PNG)
+
+Which variables (and interactions) in the regression have fixed effects? Which ones have random effects?  
+
+Fixed effects: 1+ History + Promotion + History:Promotion + logIncome:Promotion + Balance
+
+Random effects: 1 + Promotion
+
+
+Specify the variables in lmer() and run the regression. Please copy and paste the summary() of the regression.
+
+```{r}
+library(lme4)
+
+sow.lmer = lmer(logSowRatio ~ History + Balance + Promotion + History:Promotion + logIncome:Promotion + (1+ Promotion|ConsumerID), data=sow.data, REML=F)
+
+sow.lmer = lmer(logSowRatio ~ History + Balance + Promotion + History:Promotion + logIncome:Promotion + (1+ Promotion|ConsumerID), data=sow.data, REML=T, control=lmerControl(optimizer="Nelder_Mead"))
+
+summary(sow.lmer)
+```
+
+
+Interpret the estimated fixed effects in the regression.  
+
+```{r}
+fixef(sow.lmer)
+
+head(coef(sow.lmer)$ConsumerID,5)
+```
+
+Promotion has the highest influence on Share of Wallet. 1 unit increase in index of promotions per month, can lead to customer spending 1.84 (exp(0.61)) more provided all the other factors remain the same
+
+It is interesting to see that the interaction of History with Promotions has a negative coefficient, but History by itself has a positive coefficient and Promotion by itself also has a positive coefficient. It probably means that  someone who is loyal to the store and shops there often is likely to spend more, but he/she also doesn't get influenced much by the promotions in the store.
+
+Another interesting observation is the negative coefficient for interaction between Promotion and logIncome. Plotting the variables
+
+```{r}
+plot(sow.data$logIncome,sow.data$logSowRatio)
+plot(sow.data$Promotion,sow.data$logSowRatio)
+plot(sow.data$Promotion*sow.data$logIncome,sow.data$logSowRatio)
+```
+
+Comment: From the graph we can observe that share of waller is denser as logIncome increases.
+
+Please plot the histograms for the random effects in the linear mixed effect model. 
+
+```{r}
+#checking coefficients of random effects
+head(ranef(sow.lmer)$ConsumerID, 5)
+#checking the assumption if random effects are normally distributed
+hist(coef(sow.lmer)$ConsumerID[,1], main="Intercept")
+hist(coef(sow.lmer)$ConsumerID[,4], main="Promotion")
+```
+
+
+Using the estimated random effect, calculate beta0i and beta2i and plot their histograms.
+
+```{r}
+# beta0i = intercept of fixed effects + beta for history * history + intercept for random effect
+beta0i = fixef(sow.lmer)[1] + fixef(sow.lmer)[2] * sow.data$History + ranef(sow.lmer)$ConsumerID[,1]  
+hist(beta0i)
+# beta2i = beta for promotion * promotion + beta for interaction of history and promotion * history * promotion + beta for interaction of logincome and promotion * logincome * promotion + promotion value for random effects
+beta2i = fixef(sow.lmer)[4]+ fixef(sow.lmer)[5] * sow.data$History + fixef(sow.lmer)[6] * sow.data$logIncome + ranef(sow.lmer)$ConsumerID[,2]
+hist(beta2i)
+
+```
+
+Compare model fit using AIC() and BIC() with the model in (2). 
+
+```{r}
+AIC(sow.lmer)
+AIC(sow.lm)
+
+BIC(sow.lmer)
+BIC(sow.lm)
+
+```
+
+AIC and BIC of linear mixed models are much lower than linear model. This shows that linear mixed models outperform linear models for this scenario
+
+# Linear and Hierarchical Linear Models: Bayesian Estimation
+
+## Question 4
+
+Use the function MCMCregress() in the R package "MCMCpack" to estimate the linear regression
+
+```{r}
+library(MCMCpack)
+
+sow.ba1 = MCMCregress(logSowRatio ~ History + Balance + Promotion + History:Promotion + logIncome:Promotion,mcmc=6000, data=sow.data)
+```
+
+
+Use the summary() function to find the results of the estimation. Copy and pastes the results here. 
+
+```{r}
+summary(sow.ba1)
+```
+
+From the Bayesian posterior intervals (use 2.5% and 97.5% quantiles of the simulated posterior distributions), are regression coefficients significant at the 5% level?
+
+Based on the 2.5% and 97.5% quantiles, we can see that History, Balance, Promotion, interaction of History with Promotion and interaction of Promotion with logIncome are all significant
+
+
+Use the plot() function to plot the posterior sampling chains and posterior densities (estimated by kernel methods automatically by R) for beta3 and beta5 copy and paste the results here. Use the autocorr.plot() function to plot the autocorrelation of the posterior sampling chains for beta3 and beta5; copy and paste the results here. 
+
+```{r}
+#beta3 = promotion
+plot(sow.ba1[,4])
+
+autocorr.plot(sow.ba1[,4])
+
+#beta5 = logIncome * promotion
+plot(sow.ba1[,6])
+
+autocorr.plot(sow.ba1[,6])
+
+#traceplot(m1[,"price"], main="Price Coefficient")
+
+#densplot(m1[,"price"], main="Price Coefficient")
+
+apply(sow.ba1, 2, quantile, probs=c(0.025, 0.5, 0.975))
+
+```
+
+
+## Question 5
+
+For the hierarchical linear model use the function MCMChregress( ) in the R package "MCMCpack" for its Bayesian estimation
+
+```{r}
+#library(MCMC)
+sow.ba2 = MCMChregress(fixed=logSowRatio ~ History + Balance + Promotion + History:Promotion + logIncome:Promotion, random=~Promotion, group="ConsumerID", data=sow.data, r=2,R=diag(2))
+```
+
+
+
+Please copy and paste the Bayesian estimation results of the fixed effects (same fixed effects as in (3)) in the model using summary("yourBayesianModelName"$mcmc[,1:6]). From the Bayesian posterior intervals, are the fixed effects significant at the 5% level?
+
+```{r}
+summary(sow.ba2$mcmc[,1:6])
+```
+All are significant
+ 
+ 
+Use the plot() function to plot the posterior sampling chains and posterior densities for mu1 and gamma2; copy and paste the results here. Use the autocorr.plot() function to plot the autocorrelation of the posterior sampling chains for mu1 and gamma2; copy and paste the results here. 
+
+```{r}
+#mu1 = coefficient of fixed effect history
+plot(sow.ba2$mcmc[,2])
+autocorr.plot(sow.ba2$mcmc[,2])
+
+#beta1 = coefficient of balance
+plot(sow.ba2$mcmc[,3])
+autocorr.plot(sow.ba2$mcmc[,3])
+
+
+#gamma2 = coefficient of interaction of logIncome and Promotion
+plot(sow.ba2$mcmc[,6])
+autocorr.plot(sow.ba2$mcmc[,6])
+
+```
+
+Compare the posterior densities and 95% intervals of gamma2 and beta5 in Question (4). Do the intervals include zero? 
+
+```{r}
+#Comparing with beta5 and beta1 of linear model
+#beta5 = coefficient of interaction of History and Promotion
+plot(sow.ba1[,6])
+autocorr.plot(sow.ba1[,6])
+
+#beta2 = coefficient of balance
+plot(sow.ba1[,3])
+autocorr.plot(sow.ba1[,3])
+
+#beta1 = coefficient of history
+plot(sow.ba1[,2])
+autocorr.plot(sow.ba1[,2])
+
+```
+
+
+Comment on the differences of their estimation results.
+
+We observe that interaction of History with Promotion is significant in the hierarchical model, but that is not the case in the Linear model. The other variables are significant in both models.
+
+By accounting for Promotion as random effects, we are able to better estimate the model and identify the pattern in repeat purchases data.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
